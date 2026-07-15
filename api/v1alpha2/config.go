@@ -108,11 +108,26 @@ type SourceT struct {
 	Port     uint32              `yaml:"port"`
 	User     string              `yaml:"user"`
 	Password string              `yaml:"password"`
+	TLS      SourceTLST          `yaml:"tls"`
 	DBTables map[string][]string `yaml:"dbTables"`
 
 	ReadTimeout     time.Duration `yaml:"readTimeout"`
 	HeartbeatPeriod time.Duration `yaml:"heartbeatPeriod"`
 	StartLocation   LocationT     `yaml:"startLocation"`
+}
+
+// SourceTLST configures TLS for the connection to the source database.
+// CA enables server certificate verification and Cert/Key present a client
+// certificate (mTLS). InsecureSkipVerify disables hostname verification;
+// when a CA is set, the certificate chain is still verified against it
+// (needed for CloudSQL, whose server certs do not include the instance IP).
+type SourceTLST struct {
+	Enabled            bool   `yaml:"enabled"`
+	CA                 string `yaml:"ca"`
+	Cert               string `yaml:"cert"`
+	Key                string `yaml:"key"`
+	ServerName         string `yaml:"serverName"`
+	InsecureSkipVerify bool   `yaml:"insecureSkipVerify"`
 }
 
 // LocationT

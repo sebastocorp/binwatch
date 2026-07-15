@@ -1,18 +1,21 @@
 package utils
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"database/sql"
 	"fmt"
 	"os"
 	"regexp"
 	"strings"
 
+	"binwatch/api/v1alpha2"
 	"binwatch/internal/logger"
 
 	"github.com/go-mysql-org/go-mysql/canal"
 	"github.com/go-mysql-org/go-mysql/mysql"
 	"github.com/go-mysql-org/go-mysql/replication"
-	_ "github.com/go-sql-driver/mysql"
+	mysqldrv "github.com/go-sql-driver/mysql"
 )
 
 const (
@@ -89,17 +92,102 @@ func GetDMLOperationFromRowsEventType(et replication.EventType) (eType string) {
 	return ""
 }
 
+// GetTLSConfig builds the TLS configuration used to connect to the source
+// database: the CA verifies the server certificate and Cert/Key present a
+// client certificate (mTLS). ServerName is required by the TLS handshake
+// when verification is enabled; it defaults to the source host unless
+// overridden in the config. Returns nil when TLS is disabled.
+func GetTLSConfig(cfg v1alpha2.SourceTLST, defaultServerName string) (*tls.Config, error) {
+	if !cfg.Enabled {
+		return nil, nil
+	}
+
+	serverName := cfg.ServerName
+	if serverName == "" {
+		serverName = defaultServerName
+	}
+
+	tlsCfg := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		ServerName:         serverName,
+		InsecureSkipVerify: cfg.InsecureSkipVerify,
+	}
+
+	if cfg.CA != "" {
+		caPEM, err := os.ReadFile(cfg.CA)
+		if err != nil {
+			return nil, fmt.Errorf("unable to read TLS CA file %q: %w", cfg.CA, err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return nil, fmt.Errorf("unable to parse any certificate from TLS CA file %q", cfg.CA)
+		}
+		tlsCfg.RootCAs = pool
+
+		// CloudSQL server certificates do not include the instance IP in the
+		// SANs, so standard hostname verification fails. With
+		// insecureSkipVerify enabled the chain is still verified against the
+		// CA here, only the hostname check is skipped.
+		if cfg.InsecureSkipVerify {
+			tlsCfg.VerifyPeerCertificate = verifyPeerCertAgainstCA(pool)
+		}
+	}
+
+	if cfg.Cert != "" || cfg.Key != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.Cert, cfg.Key)
+		if err != nil {
+			return nil, fmt.Errorf("unable to load TLS client keypair (cert %q, key %q): %w", cfg.Cert, cfg.Key, err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsCfg, nil
+}
+
+func verifyPeerCertAgainstCA(pool *x509.CertPool) func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+	return func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+		if len(rawCerts) == 0 {
+			return fmt.Errorf("no server certificate presented")
+		}
+		certs := make([]*x509.Certificate, 0, len(rawCerts))
+		for _, raw := range rawCerts {
+			cert, err := x509.ParseCertificate(raw)
+			if err != nil {
+				return fmt.Errorf("unable to parse server certificate: %w", err)
+			}
+			certs = append(certs, cert)
+		}
+		opts := x509.VerifyOptions{
+			Roots:         pool,
+			Intermediates: x509.NewCertPool(),
+		}
+		for _, cert := range certs[1:] {
+			opts.Intermediates.AddCert(cert)
+		}
+		_, err := certs[0].Verify(opts)
+		return err
+	}
+}
+
 type DBOptions struct {
-	Flavor string
-	User   string
-	Pass   string
-	Host   string
-	Port   uint32
+	Flavor    string
+	User      string
+	Pass      string
+	Host      string
+	Port      uint32
+	TLSConfig *tls.Config
 }
 
 // GetTableColumns TODO
 func GetTableColumns(ops DBOptions, dbTables map[string][]string) (dbTableColsNames map[string][]string, err error) {
 	dsn := fmt.Sprintf("%s:%s@(%s:%d)/", ops.User, ops.Pass, ops.Host, ops.Port)
+	if ops.TLSConfig != nil {
+		err = mysqldrv.RegisterTLSConfig("binwatch", ops.TLSConfig)
+		if err != nil {
+			return dbTableColsNames, err
+		}
+		dsn += "?tls=binwatch"
+	}
 	db, err := sql.Open(ops.Flavor, dsn)
 	if err != nil {
 		return dbTableColsNames, err

@@ -55,7 +55,7 @@ List of fields in v1alpha2 configuration:
 | `source.tls.cert`                     | `string`              | Path to the client certificate for mTLS.                                              |
 | `source.tls.key`                      | `string`              | Path to the client private key for mTLS.                                              |
 | `source.tls.serverName`               | `string`              | Hostname expected in the server certificate. Defaults to `source.host`.               |
-| `source.tls.insecureSkipVerify`       | `bool`                | Skip hostname check; the chain is still verified when a CA is set (CloudSQL).         |
+| `source.tls.insecureSkipVerify`       | `bool`                | Skip hostname check. With `ca` the chain is verified; without it, nothing is.         |
 | `source.dbTables`                     | `map[string][]string` | Map of database names to tables to monitor (e.g., { "db": ["table"] }).               |
 | `source.readTimeout`                  | `duration`            | Maximum time to wait for a read operation.                                            |
 | `source.heartbeatPeriod`              | `duration`            | Interval between heartbeat messages.                                                  |

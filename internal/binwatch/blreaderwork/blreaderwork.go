@@ -54,6 +54,9 @@ func NewBinlogReaderWork(cfg *v1alpha2.ConfigT, rePool *pools.RowEventPoolT, cac
 	if err != nil {
 		return w, err
 	}
+	if w.cfg.Source.TLS.Enabled && w.cfg.Source.TLS.InsecureSkipVerify && w.cfg.Source.TLS.CA == "" {
+		w.log.Warn("source TLS insecureSkipVerify is set without a CA: the connection is encrypted but the server certificate will NOT be verified", utils.GetBasicLogExtraFields(componentName), nil)
+	}
 
 	w.mysql.blSyncer = replication.NewBinlogSyncer(replication.BinlogSyncerConfig{
 		Flavor:          w.cfg.Source.Flavor,

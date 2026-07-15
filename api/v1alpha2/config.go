@@ -121,6 +121,8 @@ type SourceT struct {
 // certificate (mTLS). InsecureSkipVerify disables hostname verification;
 // when a CA is set, the certificate chain is still verified against it
 // (needed for CloudSQL, whose server certs do not include the instance IP).
+// Without a CA, InsecureSkipVerify disables server verification entirely
+// (encrypted but unauthenticated — only for migration/testing).
 type SourceTLST struct {
 	Enabled            bool   `yaml:"enabled"`
 	CA                 string `yaml:"ca"`

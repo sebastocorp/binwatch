@@ -34,7 +34,7 @@ source:
     cert: "" # path to the client certificate for mTLS (e.g. CloudSQL client-cert.pem)
     key: "" # path to the client private key for mTLS (e.g. CloudSQL client-key.pem)
     serverName: "" # hostname expected in the server certificate, defaults to source.host
-    insecureSkipVerify: false # skip hostname verification; with a CA set, the chain is still verified (required for CloudSQL, whose certs do not include the instance IP)
+    insecureSkipVerify: false # skip hostname verification; with a CA set, the chain is still verified (required for CloudSQL, whose certs do not include the instance IP); WITHOUT a CA the server cert is NOT verified at all (insecure, only for migration/testing)
   dbTables: {} # map of databases tables to watch
   # dbTables:
   #   testdb: [users]

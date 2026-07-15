@@ -27,3 +27,6 @@ go.work
 *~
 
 int.test/
+
+# Integration test generated certificates
+test/integration/certs/*.pem

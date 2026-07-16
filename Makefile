@@ -80,3 +80,18 @@ WATCHER_FLAGS?=--config $(WATCHER_CONFIG)
 run-watcher: fmt vet ## Run a command from your host (define WATCHER_FLAGS to custom run watcher).
 	go run cmd/main.go watcher $(WATCHER_FLAGS)
 
+##@ Integration test
+
+.PHONY: int-test-up
+int-test-up: ## Start the mTLS integration environment (mysql 8.0 + binwatch + traffic + webhook).
+	test/integration/certs/generate-certs.sh
+	cd test/integration && $(CONTAINER_TOOL) compose up --build -d
+
+.PHONY: int-test-logs
+int-test-logs: ## Follow binwatch and webhook logs from the integration environment.
+	cd test/integration && $(CONTAINER_TOOL) compose logs -f binwatch webhook
+
+.PHONY: int-test-down
+int-test-down: ## Tear down the integration environment and its volumes.
+	cd test/integration && $(CONTAINER_TOOL) compose down -v
+

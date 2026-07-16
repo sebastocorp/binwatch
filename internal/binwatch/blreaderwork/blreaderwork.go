@@ -2,6 +2,7 @@ package blreaderwork
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"reflect"
 	"strings"
@@ -37,6 +38,7 @@ type mysqlT struct {
 	blStream *replication.BinlogStreamer
 	blLoc    mysql.Position
 	colNames map[string][]string
+	tlsCfg   *tls.Config
 }
 
 func NewBinlogReaderWork(cfg *v1alpha2.ConfigT, rePool *pools.RowEventPoolT, cach cache.CacheI) (w *BLReaderWorkT, err error) {
@@ -48,6 +50,14 @@ func NewBinlogReaderWork(cfg *v1alpha2.ConfigT, rePool *pools.RowEventPoolT, cac
 		cach:   cach,
 	}
 
+	w.mysql.tlsCfg, err = utils.GetTLSConfig(w.cfg.Source.TLS, w.cfg.Source.Host)
+	if err != nil {
+		return w, err
+	}
+	if w.cfg.Source.TLS.Enabled && w.cfg.Source.TLS.InsecureSkipVerify && w.cfg.Source.TLS.CA == "" {
+		w.log.Warn("source TLS insecureSkipVerify is set without a CA: the connection is encrypted but the server certificate will NOT be verified", utils.GetBasicLogExtraFields(componentName), nil)
+	}
+
 	w.mysql.blSyncer = replication.NewBinlogSyncer(replication.BinlogSyncerConfig{
 		Flavor:          w.cfg.Source.Flavor,
 		ServerID:        w.cfg.Source.ServerID,
@@ -57,17 +67,19 @@ func NewBinlogReaderWork(cfg *v1alpha2.ConfigT, rePool *pools.RowEventPoolT, cac
 		Password:        w.cfg.Source.Password,
 		ReadTimeout:     w.cfg.Source.ReadTimeout,
 		HeartbeatPeriod: w.cfg.Source.HeartbeatPeriod,
+		TLSConfig:       w.mysql.tlsCfg,
 		Logger:          logger.DummyLogger{},
 	})
 
 	// Get Columns
 
 	w.mysql.colNames, err = utils.GetTableColumns(utils.DBOptions{
-		Flavor: w.cfg.Source.Flavor,
-		User:   w.cfg.Source.User,
-		Pass:   w.cfg.Source.Password,
-		Host:   w.cfg.Source.Host,
-		Port:   w.cfg.Source.Port,
+		Flavor:    w.cfg.Source.Flavor,
+		User:      w.cfg.Source.User,
+		Pass:      w.cfg.Source.Password,
+		Host:      w.cfg.Source.Host,
+		Port:      w.cfg.Source.Port,
+		TLSConfig: w.mysql.tlsCfg,
 	}, w.cfg.Source.DBTables)
 	if err != nil {
 		return w, err
@@ -96,12 +108,13 @@ func NewBinlogReaderWork(cfg *v1alpha2.ConfigT, rePool *pools.RowEventPoolT, cac
 
 	if w.mysql.blLoc.Name == "" {
 		w.mysql.blLoc, err = utils.GetCurrentBinlogLocation(&canal.Config{
-			ServerID: w.cfg.Source.ServerID,
-			Flavor:   w.cfg.Source.Flavor,
-			Addr:     fmt.Sprintf("%s:%d", w.cfg.Source.Host, w.cfg.Source.Port),
-			User:     w.cfg.Source.User,
-			Password: w.cfg.Source.Password,
-			Logger:   logger.DummyLogger{},
+			ServerID:  w.cfg.Source.ServerID,
+			Flavor:    w.cfg.Source.Flavor,
+			Addr:      fmt.Sprintf("%s:%d", w.cfg.Source.Host, w.cfg.Source.Port),
+			User:      w.cfg.Source.User,
+			Password:  w.cfg.Source.Password,
+			TLSConfig: w.mysql.tlsCfg,
+			Logger:    logger.DummyLogger{},
 		})
 		if err != nil {
 			return w, err
@@ -154,12 +167,13 @@ func (w *BLReaderWorkT) Run(wg *sync.WaitGroup, ctx context.Context) {
 
 							// Get current binlog location without cache in order to avoid infinite loop
 							w.mysql.blLoc, err = utils.GetCurrentBinlogLocation(&canal.Config{
-								ServerID: w.cfg.Source.ServerID,
-								Flavor:   w.cfg.Source.Flavor,
-								Addr:     fmt.Sprintf("%s:%d", w.cfg.Source.Host, w.cfg.Source.Port),
-								User:     w.cfg.Source.User,
-								Password: w.cfg.Source.Password,
-								Logger:   logger.DummyLogger{},
+								ServerID:  w.cfg.Source.ServerID,
+								Flavor:    w.cfg.Source.Flavor,
+								Addr:      fmt.Sprintf("%s:%d", w.cfg.Source.Host, w.cfg.Source.Port),
+								User:      w.cfg.Source.User,
+								Password:  w.cfg.Source.Password,
+								TLSConfig: w.mysql.tlsCfg,
+								Logger:    logger.DummyLogger{},
 							})
 							if err != nil {
 								w.log.Error("error getting current binlog location", extra, err, true)
@@ -175,6 +189,7 @@ func (w *BLReaderWorkT) Run(wg *sync.WaitGroup, ctx context.Context) {
 								Password:        w.cfg.Source.Password,
 								ReadTimeout:     w.cfg.Source.ReadTimeout,
 								HeartbeatPeriod: w.cfg.Source.HeartbeatPeriod,
+								TLSConfig:       w.mysql.tlsCfg,
 								Logger:          logger.DummyLogger{},
 							})
 

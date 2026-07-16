@@ -1,0 +1,56 @@
+logger:
+  level: debug
+
+server:
+  id: binwatch-integration
+  host: "0.0.0.0"
+  port: 8080
+  stopInError: false
+  restartSyncerOnError: true
+  senderWorkers: 1
+  pool:
+    size: 20
+    itemByRow: true
+  cache:
+    enabled: false
+
+source:
+  flavor: mysql
+  serverID: 100
+  host: mysql
+  port: 3306
+  user: binwatch
+  password: binwatch
+  tls:
+    enabled: true
+    ca: /certs/ca.pem
+    cert: /certs/client-cert.pem
+    key: /certs/client-key.pem
+    # The server cert includes SAN DNS:mysql, so full verification works here.
+    insecureSkipVerify: false
+  dbTables:
+    testdb: [users]
+  readTimeout: 90s
+  heartbeatPeriod: 60s
+
+connectors:
+- name: echo
+  type: webhook
+  webhook:
+    url: http://webhook:8080/events
+    method: POST
+    headers:
+      "Content-Type": "application/json"
+
+routes:
+- name: users-all
+  connector: echo
+  operations: ["INSERT", "UPDATE", "DELETE"]
+  dbTable: "testdb.users"
+  template: |
+    {
+      "operation": "{{ .Data.Operation }}",
+      "database": "{{ .Data.Database }}",
+      "table": "{{ .Data.Table }}",
+      "rows": {{- .Data.Rows | toJson }}
+    }
